@@ -65,14 +65,14 @@ async def send_daily_report(bot: Bot):
 # --- КЛАВИАТУРЫ ---
 def get_main_kb(user_id):
     kb_list =,
-    ]
+    ])
     if user_id == ADMIN_ID:
         kb_list.append()
     return ReplyKeyboardMarkup(keyboard=kb_list, resize_keyboard=True)
 
 def get_balance_kb():
     rows =,
-    ]
+    ])
     if CRYPTO_TOKEN:
         rows.append()
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -174,6 +174,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
