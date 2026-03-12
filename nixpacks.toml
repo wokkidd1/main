@@ -1,8 +1,9 @@
 [phases.setup]
-nixPkgs = ["ffmpeg"]
+nixPkgs = ["python310", "ffmpeg"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["python3 -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt"]
 
 [start]
-cmd = "python main.py"
+cmd = "/opt/venv/bin/python main.py"
+
