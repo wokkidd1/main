@@ -5,8 +5,10 @@ import yt_dlp
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, FSInputFile
 
-# --- НАСТРОЙКИ (Берем из переменных окружения Railway) ---
-TOKEN = os.getenv("8683356041:AAG4ZY-pcY2AiMpzhW7exEFsyGq-SezJlfY") 
+# --- НАСТРОЙКИ (Берем из переменных окружения Railway по КЛЮЧУ) ---
+# В Railway ты создал переменную с ИМЕНЕМ "BOT_TOKEN". Мы её и вызываем.
+TOKEN = os.getenv("BOT_TOKEN") 
+
 DOWNLOAD_DIR = "downloads"
 RESULT_DIR = "results"
 
@@ -16,7 +18,7 @@ for folder in [DOWNLOAD_DIR, RESULT_DIR]:
         os.makedirs(folder)
 
 if not TOKEN:
-    print("ОШИБКА: Переменная BOT_TOKEN не установлена в Railway!")
+    print("ОШИБКА: Переменная BOT_TOKEN не найдена в системе!")
     exit(1)
 
 bot = Bot(token=TOKEN)
@@ -30,6 +32,7 @@ def download_video(url):
         'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
+        'no_warnings': True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -40,8 +43,7 @@ def unique_video(input_path):
     filename = os.path.basename(input_path)
     output_path = os.path.join(RESULT_DIR, f"unique_{filename}")
     
-    # Команда FFmpeg для "перезаписи" видео:
-    # hflip - зеркало, scale/crop - зум 10%, setpts/atempo - ускорение 5%
+    # Команда FFmpeg: зеркало + зум 10% + ускорение 5%
     command = [
         'ffmpeg', '-y', '-i', input_path,
         '-vf', 'hflip,scale=iw*1.1:-1,crop=iw/1.1:ih/1.1,setpts=0.95*PTS',
@@ -57,38 +59,41 @@ def unique_video(input_path):
 # --- ОБРАБОТЧИК ССЫЛОК ---
 @dp.message(F.text.contains("http"))
 async def handle_link(message: Message):
-    status_msg = await message.answer("📥 Скачиваю видео...")
+    status_msg = await message.answer("📥 Начинаю работу... Скачиваю видео.")
     
     try:
-        # Запускаем тяжелые функции в отдельном потоке, чтобы бот не тупил
+        # Скачивание (в отдельном потоке)
         file_path = await asyncio.to_thread(download_video, message.text)
         
-        await status_msg.edit_text("⚙️ Уникализирую (зеркало + зум + 105% скорость)...")
+        await status_msg.edit_text("⚙️ Уникализирую контент (зеркало + зум + тайминг)...")
+        # Обработка (в отдельном потоке)
         final_video_path = await asyncio.to_thread(unique_video, file_path)
         
-        await status_msg.edit_text("🚀 Отправляю результат!")
+        await status_msg.edit_text("🚀 Готово! Отправляю результат.")
         
-        # Отправляем видео пользователю
+        # Отправка видео
         video_file = FSInputFile(final_video_path)
-        await message.answer_video(video=video_file, caption="✅ Готово для Reels/TikTok/Shorts!")
+        await message.answer_video(video=video_file, caption="✅ Видео уникализировано!")
         
-        # Удаляем временные файлы, чтобы не забить память сервера
+        # Удаляем временные файлы
         if os.path.exists(file_path): os.remove(file_path)
         if os.path.exists(final_video_path): os.remove(final_video_path)
         await status_msg.delete()
 
     except Exception as e:
-        await message.answer(f"❌ Произошла ошибка: {str(e)}")
+        await message.answer(f"❌ Ошибка: {str(e)}")
         print(f"Error: {e}")
 
 @dp.message()
 async def welcome(message: Message):
-    await message.answer("Привет! Пришли мне ссылку на TikTok, Shorts или Reels, и я сделаю видео уникальным.")
+    await message.answer("Привет! Пришли мне ссылку на TikTok, Shorts или Reels, и я сделаю видео уникальным для твоего канала.")
 
 # --- ЗАПУСК ---
 async def main():
-    print("Бот успешно запущен!")
+    print("Бот успешно запущен и ждет ссылок!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
