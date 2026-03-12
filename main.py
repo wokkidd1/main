@@ -53,26 +53,17 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     if commit: conn.commit()
     conn.close(); return res
 
-# --- ЛОГИКА ОТЧЕТОВ ---
-async def send_daily_report(bot: Bot):
-    today = datetime.now().strftime('%Y-%m-%d')
-    res_dl = db_query("SELECT SUM(downloads) FROM users WHERE last_reset = ?", (today,), fetchone=True)
-    total_dl = res_dl[0] if res_dl and res_dl[0] else 0
-    res_new = db_query("SELECT COUNT(*) FROM users WHERE join_date = ?", (today,), fetchone=True)
-    total_new = res_new[0] if res_new else 0
-    await bot.send_message(ADMIN_ID, f"📊 **ОТЧЕТ**\n\n👤 Новых: `{total_new}`\n🎬 Видео: `{total_dl}`", parse_mode="Markdown")
-
 # --- КЛАВИАТУРЫ ---
 def get_main_kb(user_id):
     kb_list =,
-    ])
+    ]
     if user_id == ADMIN_ID:
         kb_list.append()
     return ReplyKeyboardMarkup(keyboard=kb_list, resize_keyboard=True)
 
 def get_balance_kb():
     rows =,
-    ])
+    ]
     if CRYPTO_TOKEN:
         rows.append()
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -98,7 +89,7 @@ async def cmd_start(m: Message):
     if not db_query("SELECT user_id FROM users WHERE user_id = ?", (uid,), fetchone=True):
         db_query("INSERT INTO users (user_id, downloads, last_reset, join_date) VALUES (?, 0, ?, ?)", (uid, today, today), commit=True)
         count = db_query("SELECT COUNT(*) FROM users", fetchone=True)
-        await bot.send_message(ADMIN_ID, f"🆕 Новый юзер: `{uid}`\nВсего в базе: `{count[0] if count else 1}`")
+        await bot.send_message(ADMIN_ID, f"🆕 Новый юзер: `{uid}`")
     await m.answer("🚀 Привет! Пришли ссылку.", reply_markup=get_main_kb(uid))
 
 @dp.message(F.text == "💰 Баланс")
@@ -110,7 +101,6 @@ async def cmd_balance(m: Message):
 
 @dp.message(F.text == "👤 Профиль")
 async def cmd_profile(m: Message):
-    # Исправлен порядок: downloads(0), stars(3), premium_until(5) согласно таблице
     res = db_query("SELECT downloads, stars, premium_until FROM users WHERE user_id = ?", (m.from_user.id,), fetchone=True)
     used, stars, pr = (res[0], res[1], res[2]) if res else (0, 0, None)
     is_p = "✅ Да" if pr and datetime.strptime(pr, '%Y-%m-%d %H:%M') > datetime.now() else "❌ Нет"
@@ -169,11 +159,18 @@ async def handle_video(m: Message):
             os.remove(p); os.remove(f); await st.delete()
     except Exception as e: await m.answer(f"❌ Ошибка: {e}")
 
+@dp.message(F.text)
+async def unknown_msg(m: Message):
+    if m.text in ["👤 Профиль", "💰 Баланс", "📜 Правила", "🆘 Поддержка", "🛠 Админка"]: return
+    await m.answer("⚠️ Я понимаю только ссылки.")
+
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
 
 
