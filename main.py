@@ -13,16 +13,17 @@ from aiogram.types import (Message, FSInputFile, ReplyKeyboardMarkup,
 from aiogram.filters import Command
 from aiocryptopay import AioCryptoPay, Networks
 
-# --- НАСТРОЙКИ ---
-TOKEN = os.getenv("BOT_TOKEN")
-CRYPTO_TOKEN = os.getenv("CRYPTO_TOKEN") 
+# --- НАСТРОЙКИ (ЗАПОЛНИТЕ ИХ) ---
+TOKEN = os.getenv("BOT_TOKEN")  # Токен от @BotFather
+CRYPTO_TOKEN = os.getenv("CRYPTO_TOKEN")  # Токен от @CryptoBot
 ADMIN_ID = 6779188403
-SUPPORT_URL = "https://t.me/wokkiddd"
-CHANNEL_URL = "https://t.me/rewokkidd" 
+SUPPORT_URL = "https://t.me"
+CHANNEL_URL = "https://t.me" 
 FREE_LIMIT = 3
 DB_NAME = "users_data.db"
 DOWNLOAD_DIR, RESULT_DIR = "downloads", "results"
 
+# Создание папок
 for folder in [DOWNLOAD_DIR, RESULT_DIR]:
     os.makedirs(folder, exist_ok=True)
 
@@ -30,7 +31,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 crypto = AioCryptoPay(token=CRYPTO_TOKEN, network=Networks.MAIN_NET) if CRYPTO_TOKEN else None
 
-# --- БАЗА ДАННЫХ ---
+# --- РАБОТА С БАЗОЙ ДАННЫХ ---
 def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     with sqlite3.connect(DB_NAME) as conn:
         cur = conn.cursor()
@@ -65,11 +66,11 @@ def get_balance_kb():
 
 def get_support_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👨‍💻 Админ", url=SUPPORT_URL)],
-        [InlineKeyboardButton(text="📢 Канал", url=CHANNEL_URL)]
+        [InlineKeyboardButton(text="👨‍💻 Написать админу", url=SUPPORT_URL)],
+        [InlineKeyboardButton(text="📢 Наш канал", url=CHANNEL_URL)]
     ])
 
-# --- УНИКАЛИЗАЦИЯ ---
+# --- ЛОГИКА ВИДЕО ---
 def unique_video_farm(input_path):
     zoom = round(random.uniform(1.06, 1.15), 2)
     speed = round(random.uniform(1.02, 1.07), 2)
@@ -85,7 +86,7 @@ async def download_video(url):
     ydl_opts = {'format': 'best[ext=mp4]/best', 'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s', 'quiet': True}
     return await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=True))
 
-# --- ОБРАБОТЧИКИ ---
+# --- ОБРАБОТЧИКИ КОМАНД ---
 @dp.message(Command("start"))
 async def cmd_start(m: Message):
     uid = m.from_user.id
@@ -93,38 +94,55 @@ async def cmd_start(m: Message):
     if not db_query("SELECT user_id FROM users WHERE user_id = ?", (uid,), fetchone=True):
         db_query("INSERT INTO users (user_id, downloads, last_reset, join_date) VALUES (?, 0, ?, ?)", 
                  (uid, today, today), commit=True)
-    await m.answer(f"🚀 Привет! Пришли ссылку на видео.\nНаш канал: {CHANNEL_URL}", reply_markup=get_main_kb(uid))
+    await m.answer(f"🚀 Привет! Я помогу уникализировать видео для TikTok/Reels.\n\nПросто пришли ссылку!", reply_markup=get_main_kb(uid))
 
+@dp.message(Command("help"))
+async def cmd_help(m: Message):
+    text = ("📖 **Как пользоваться ботом?**\n\n"
+            "1. Пришли ссылку на видео.\n"
+            "2. Бот изменит метаданные, скорость и масштаб.\n"
+            f"3. Лимит: {FREE_LIMIT} видео в сутки.\n\n"
+            "Для снятия лимитов нажми кнопку '💰 Баланс'.")
+    await m.answer(text, parse_mode="Markdown")
+
+@dp.message(Command("ahelp"))
+async def cmd_ahelp(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    text = ("👑 **Админ-команды:**\n\n"
+            "• Пришли список ссылок (каждая с новой строки) — бот сделает ZIP.\n"
+            "• Нажми '🛠 Админка' для просмотра статистики.")
+    await m.answer(text, parse_mode="Markdown")
+
+# --- ОБРАБОТЧИКИ КНОПОК ---
 @dp.message(F.text == "💰 Баланс")
 async def cmd_balance(m: Message):
     res = db_query("SELECT stars, premium_until FROM users WHERE user_id = ?", (m.from_user.id,), fetchone=True)
-    stars = res[0] if res else 0
-    prem = res[1] if res and res[1] else "Нет"
-    await m.answer(f"💰 **Баланс:** `{stars}` 🌟\n⏳ **Безлимит:** `{prem}`", 
+    stars, prem = (res[0], res[1]) if res else (0, "Нет")
+    await m.answer(f"💰 **Баланс:** `{stars}` 🌟\n⏳ **Безлимит:** `{prem if prem else 'Нет'}`", 
                    reply_markup=get_balance_kb(), parse_mode="Markdown")
 
 @dp.message(F.text == "👤 Профиль")
 async def cmd_profile(m: Message):
     res = db_query("SELECT downloads, stars, premium_until FROM users WHERE user_id = ?", (m.from_user.id,), fetchone=True)
     used, stars, pr = res if res else (0, 0, None)
-    await m.answer(f"👤 **Профиль**\nID: `{m.from_user.id}`\n🌟 Звезды: {stars}\n🎬 Сегодня: {used}/{FREE_LIMIT}", 
+    await m.answer(f"👤 **Профиль**\nID: `{m.from_user.id}`\n🌟 Звезды: {stars}\n🎬 Использовано сегодня: {used}/{FREE_LIMIT}", 
                    reply_markup=get_support_kb(), parse_mode="Markdown")
 
 @dp.message(F.text == "🆘 Поддержка")
 async def cmd_support(m: Message):
-    await m.answer("🆘 Возникли вопросы? Свяжитесь с нами:", reply_markup=get_support_kb())
+    await m.answer("🆘 Нужна помощь или есть предложения?", reply_markup=get_support_kb())
 
 @dp.message(F.text == "🛠 Админка")
 async def admin_panel(m: Message):
     if m.from_user.id != ADMIN_ID: return
     count = db_query("SELECT COUNT(*) FROM users", fetchone=True)[0]
-    await m.answer(f"⚙️ **Админ-панель**\nЮзеров в базе: `{count}`", parse_mode="Markdown")
+    await m.answer(f"⚙️ **Админ-панель**\n\nВсего пользователей: `{count}`", parse_mode="Markdown")
 
 # --- ПЛАТЕЖИ ---
 @dp.callback_query(F.data == "buy_stars_tg")
 async def pay_stars(call: CallbackQuery):
     await call.message.answer_invoice(
-        title="100 Звезд", description="Пополнение баланса",
+        title="100 Звезд", description="Пополнение баланса бота",
         prices=[LabeledPrice(label="XTR", amount=100)],
         payload="stars_100", currency="XTR"
     )
@@ -136,23 +154,23 @@ async def pre_checkout(q: PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def success_pay(m: Message):
     db_query("UPDATE users SET stars = stars + 100 WHERE user_id = ?", (m.from_user.id,), commit=True)
-    await m.answer("✅ Баланс пополнен на 100 звезд!")
+    await m.answer("✅ Оплата принята! 100 звезд зачислены.")
 
 @dp.callback_query(F.data == "buy_crypto")
 async def pay_crypto(call: CallbackQuery):
-    if not crypto: return await call.answer("Настройка Crypto Pay не завершена.", show_alert=True)
+    if not crypto: return await call.answer("Crypto Pay не настроен", show_alert=True)
     inv = await crypto.create_invoice(asset='USDT', amount=1.0)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💸 Оплатить 1 USDT", url=inv.bot_invoice_url)]])
-    await call.message.answer("Оплатите инвойс в CryptoBot:", reply_markup=kb)
+    await call.message.answer("Оплатите счет в приложении CryptoBot:", reply_markup=kb)
 
-# --- ОБРАБОТКА ВИДЕО ---
+# --- ОБРАБОТКА ССЫЛОК ---
 @dp.message(F.text.contains("http"))
 async def handle_video(m: Message):
     uid = m.from_user.id
-    # Ферма для админа
+    # Ферма (только админ)
     if uid == ADMIN_ID and "\n" in m.text:
         links = [l.strip() for l in m.text.split('\n') if "http" in l]
-        st_msg = await m.answer(f"🚜 Ферма запущена ({len(links)} видео)...")
+        st_msg = await m.answer(f"🚜 Обработка фермы ({len(links)} шт)...")
         processed = []
         for link in links:
             try:
@@ -166,38 +184,43 @@ async def handle_video(m: Message):
             zip_fn = f"farm_{datetime.now().strftime('%H%M')}.zip"
             with zipfile.ZipFile(zip_fn, 'w') as z:
                 for _, f in processed: z.write(f, os.path.basename(f))
-            await m.answer_document(document=FSInputFile(zip_fn), caption=f"✅ Готово: {len(processed)}")
+            await m.answer_document(document=FSInputFile(zip_fn), caption=f"✅ Готово: {len(processed)} шт.")
             os.remove(zip_fn)
             for p, f in processed:
                 if os.path.exists(p): os.remove(p)
                 if os.path.exists(f): os.remove(f)
         await st_msg.delete(); return
 
-    # Обычный юзер
-    res = db_query("SELECT downloads, last_reset, is_banned, premium_until FROM users WHERE user_id = ?", (uid,), fetchone=True)
-    if res and res[2] == 1: return await m.answer("❌ Бан.")
+    # Обычная загрузка
+    res = db_query("SELECT downloads, last_reset, is_banned FROM users WHERE user_id = ?", (uid,), fetchone=True)
+    if res and res[2] == 1: return await m.answer("❌ Доступ заблокирован.")
     
     today = datetime.now().strftime('%Y-%m-%d')
     dl_count = res[0] if res and res[1] == today else 0
-    if dl_count >= FREE_LIMIT: return await m.answer("❌ Лимит! Пополни баланс.")
+    if dl_count >= FREE_LIMIT: return await m.answer("❌ Лимит исчерпан. Пополни баланс!")
 
-    st = await m.answer("⏳ Обработка..."); 
+    status = await m.answer("⏳ Работаю над видео...")
     try:
         info = await download_video(m.text)
-        p = info['requested_downloads'][0]['filepath']
-        f = await asyncio.to_thread(unique_video_farm, p)
-        await m.answer_video(video=FSInputFile(f), caption="✅ Уникализировано!")
+        path = info['requested_downloads'][0]['filepath']
+        final_path = await asyncio.to_thread(unique_video_farm, path)
+        
+        await m.answer_video(video=FSInputFile(final_path), caption="✅ Готово! Метаданные очищены.")
         db_query("UPDATE users SET downloads = ?, last_reset = ? WHERE user_id = ?", (dl_count+1, today, uid), commit=True)
-        if os.path.exists(p): os.remove(p)
-        if os.path.exists(f): os.remove(f)
+        
+        if os.path.exists(path): os.remove(path)
+        if os.path.exists(final_path): os.remove(final_path)
     except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)[:50]}...")
+        await m.answer(f"❌ Ошибка загрузки. Проверь ссылку.")
     finally:
-        await st.delete()
+        await status.delete()
 
 async def main():
+    print("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
