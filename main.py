@@ -16,8 +16,8 @@ from aiocryptopay import AioCryptoPay, Networks
 TOKEN = os.getenv("BOT_TOKEN")
 CRYPTO_TOKEN = os.getenv("CRYPTO_TOKEN")
 ADMIN_ID = 6779188403
-SUPPORT_URL = "https://t.me"
-CHANNEL_URL = "https://t.me" 
+SUPPORT_URL = "https://t.me/wokkiddd"
+CHANNEL_URL = "https://t.me/rewokkidd" 
 FREE_LIMIT = 3
 PREMIUM_COST = 10 
 DB_NAME = "users_data.db"
@@ -229,6 +229,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
