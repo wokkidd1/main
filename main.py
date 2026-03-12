@@ -10,8 +10,8 @@ from aiocryptopay import AioCryptoPay, Networks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # --- НАСТРОЙКИ ---
-TOKEN = "ТВОЙ_ТОКЕН_БОТА"
-CRYPTO_TOKEN = "ТВОЙ_КРИПТО_ТОКЕН"
+TOKEN = "8683356041:AAG4ZY-pcY2AiMpzhW7exEFsyGq-SezJlfY"
+CRYPTO_TOKEN = "548522:AAdBszYJScl4xtwxe9BwJzFoBDQv5HTOTSX"
 ADMIN_ID = 6779188403
 CHANNEL_ID = -100234567890 # ID твоего канала (с -100)
 CHANNEL_URL = "https://t.me/wokkiddd"
@@ -241,6 +241,7 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__": asyncio.run(main())
+
 
 
 
