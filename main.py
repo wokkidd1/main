@@ -1,111 +1,164 @@
 import asyncio
 import os
 import subprocess
+import sqlite3
+from datetime import datetime
 import yt_dlp
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, FSInputFile
+from aiogram.filters import Command
 
-# --- НАСТРОЙКИ (Берем из переменных окружения Railway) ---
-TOKEN = os.getenv("BOT_TOKEN") 
+# --- НАСТРОЙКИ ---
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = 6779188403  # Твой ID установлен
+FREE_LIMIT = 3         # Лимит видео в сутки
 DOWNLOAD_DIR = "downloads"
 RESULT_DIR = "results"
+DB_NAME = "users_data.db"
 
-# Создаем папки для работы, если их еще нет
+# Создаем папки для работы
 for folder in [DOWNLOAD_DIR, RESULT_DIR]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-if not TOKEN:
-    print("❌ ОШИБКА: Переменная BOT_TOKEN не найдена! Проверь вкладку Variables в Railway.")
-    exit(1)
+# --- РАБОТА С БАЗОЙ ДАННЫХ (SQLite) ---
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute('''CREATE TABLE IF NOT EXISTS users 
+                   (user_id INTEGER PRIMARY KEY, downloads INTEGER, last_reset TEXT)''')
+    conn.commit()
+    conn.close()
 
+init_db()
+
+def check_limit(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    cur.execute("SELECT downloads, last_reset FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    
+    if row is None:
+        cur.execute("INSERT INTO users VALUES (?, ?, ?)", (user_id, 0, today))
+        conn.commit()
+        conn.close()
+        return True, 0
+    
+    downloads, last_reset = row
+    if last_reset != today:
+        cur.execute("UPDATE users SET downloads = 0, last_reset = ? WHERE user_id = ?", (today, user_id))
+        conn.commit()
+        conn.close()
+        return True, 0
+    
+    conn.close()
+    return (downloads < FREE_LIMIT), downloads
+
+def increment_downloads(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET downloads = downloads + 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_admin_stats():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(user_id) FROM users")
+    total_users = cur.fetchone()[0]
+    cur.execute("SELECT SUM(downloads) FROM users")
+    total_downloads = cur.fetchone()[0] or 0
+    cur.execute("SELECT user_id, downloads FROM users WHERE downloads > 0 ORDER BY downloads DESC LIMIT 10")
+    top_users = cur.fetchall()
+    conn.close()
+    return total_users, total_downloads, top_users
+
+# --- ЛОГИКА БОТА ---
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- ФУНКЦИЯ СКАЧИВАНИЯ (Упрощенная для стабильности) ---
+# Функция скачивания
 def download_video(url):
     ydl_opts = {
-        # Скачиваем сразу готовый mp4, чтобы не требовать склейки через ffmpeg на этом этапе
-        'format': 'best[ext=mp4]/best', 
+        'format': 'best[ext=mp4]/best',
         'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-        'noplaylist': True,
-        'quiet': True,
-        'no_warnings': True,
+        'noplaylist': True, 'quiet': True, 'no_warnings': True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         return ydl.prepare_filename(info)
 
-# --- ФУНКЦИЯ УНИКАЛИЗАЦИИ (FFmpeg) ---
+# Функция уникализации (FFmpeg)
 def unique_video(input_path):
     filename = os.path.basename(input_path)
     output_path = os.path.join(RESULT_DIR, f"unique_{filename}")
-    
-    # Команда: Зеркало + Зум 10% + Ускорение 5% + Удаление метаданных
     command = [
         'ffmpeg', '-y', '-i', input_path,
         '-vf', 'hflip,scale=iw*1.1:-1,crop=iw/1.1:ih/1.1,setpts=0.95*PTS',
-        '-af', 'atempo=1.05',
-        '-map_metadata', '-1', # Полная очистка метаданных файла
+        '-af', 'atempo=1.05', '-map_metadata', '-1',
         '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
         output_path
     ]
-    
-    # Запуск процесса
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise Exception(f"FFmpeg Error: {result.stderr}")
-        
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     return output_path
 
-# --- ОБРАБОТЧИК ССЫЛОК ---
+# Команда Админа
+@dp.message(Command("admin"))
+async def admin_cmd(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return # Игнорируем не админов
+
+    total_u, total_d, top = get_admin_stats()
+    text = (f"📊 **АДМИН-ПАНЕЛЬ**\n\n"
+            f"👤 Всего пользователей: `{total_u}`\n"
+            f"🎬 Скачано сегодня: `{total_d}`\n\n"
+            f"🔝 **Топ активных сегодня:**\n")
+    
+    for uid, count in top:
+        text += f"• `{uid}` — {count} видео\n"
+    
+    await message.answer(text, parse_mode="Markdown")
+
+# Обработчик ссылок
 @dp.message(F.text.contains("http"))
 async def handle_link(message: Message):
-    status_msg = await message.answer("📥 Начинаю... Скачиваю видео.")
+    user_id = message.from_user.id
+    can_dl, usage = check_limit(user_id)
     
-    file_path = None
-    final_video_path = None
+    if not can_dl:
+        await message.answer(f"❌ Лимит {FREE_LIMIT}/{FREE_LIMIT} исчерпан.\nПриходи завтра!")
+        return
+
+    status = await message.answer(f"⏳ Начинаю (использовано {usage + 1}/{FREE_LIMIT})...")
     
     try:
-        # 1. Скачивание
-        file_path = await asyncio.to_thread(download_video, message.text)
-        print(f"✅ Скачано: {file_path}")
+        file_p = await asyncio.to_thread(download_video, message.text)
+        await status.edit_text("⚙️ Уникализирую...")
+        final_p = await asyncio.to_thread(unique_video, file_p)
         
-        await status_msg.edit_text("⚙️ Уникализирую (Зеркало + Зум + Тайминг)...")
+        await message.answer_video(video=FSInputFile(final_p), caption="✨ Готово!")
+        increment_downloads(user_id)
         
-        # 2. Обработка
-        final_video_path = await asyncio.to_thread(unique_video, file_path)
-        print(f"✅ Уникализировано: {final_video_path}")
-        
-        await status_msg.edit_text("🚀 Готово! Отправляю файл.")
-        
-        # 3. Отправка
-        video_file = FSInputFile(final_video_path)
-        await message.answer_video(video=video_file, caption="✨ Твоё уникальное видео готово!")
-        
-        await status_msg.delete()
+        if os.path.exists(file_p): os.remove(file_p)
+        if os.path.exists(final_p): os.remove(final_p)
+        await status.delete()
 
     except Exception as e:
-        await message.answer(f"❌ Произошла ошибка: {str(e)}")
-        print(f"⚠️ Ошибка обработки: {e}")
-
-    finally:
-        # 4. Чистка временных файлов
-        if file_path and os.path.exists(file_path): 
-            os.remove(file_path)
-        if final_video_path and os.path.exists(final_video_path): 
-            os.remove(final_video_path)
+        await message.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message()
-async def welcome(message: Message):
-    await message.answer("Привет! Скинь ссылку на TikTok, Shorts или Reels — я сделаю видео уникальным.")
+async def start_msg(message: Message):
+    await message.answer(f"Привет! Пришли мне ссылку на видео.\nТвой лимит: {FREE_LIMIT} в сутки.")
 
-# --- ЗАПУСК ---
 async def main():
-    print("🚀 Бот успешно запущен и готов к работе!")
+    print("🚀 Бот запущен! Админ ID прописан.")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
 
