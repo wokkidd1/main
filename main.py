@@ -13,7 +13,8 @@ from aiogram.filters import Command
 # --- НАСТРОЙКИ ---
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 6779188403
-SUPPORT_URL = "t.me/wokkiddd" # !!! ЗАМЕНИ НА СВОЙ ЮЗЕРНЕЙМ (без @) !!!
+SUPPORT_URL = "https://t.me/wokkiddd" # ЗАМЕНИ НА СВОЙ ЮЗЕРНЕЙМ (без @)
+CHANNEL_URL = "https://t.me/rewokkidd"    # ЗАМЕНИ НА СВОЙ КАНАЛ
 FREE_LIMIT = 3
 PREMIUM_COST = 10 
 DB_NAME = "users_data.db"
@@ -42,8 +43,9 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     res = None
     if fetchone: 
         row = cur.fetchone()
-        res = row[0] if row else None
-    if fetchall: res = cur.fetchall()
+        res = row if row else None
+    elif fetchall: 
+        res = cur.fetchall()
     if commit: conn.commit()
     conn.close()
     return res
@@ -56,7 +58,7 @@ def get_main_kb(user_id):
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def get_support_kb():
-    return InlineKeyboardMarkup(inline_keyboard=
+    return InlineKeyboardMarkup(inline_keyboard=,
     ])
 
 def get_balance_kb():
@@ -85,103 +87,150 @@ dp = Dispatcher()
 async def cmd_start(message: Message):
     db_query("INSERT OR IGNORE INTO users (user_id, last_reset) VALUES (?, ?)", 
              (message.from_user.id, datetime.now().strftime('%Y-%m-%d')), commit=True)
-    await message.answer("🚀 Привет! Я помогу тебе уникализировать видео для TikTok/Reels.\nПришли ссылку!", 
+    await message.answer("🚀 Привет! Бот готов к работе. Пришли ссылку на видео!", 
                          reply_markup=get_main_kb(message.from_user.id))
 
+# --- ПОЛЬЗОВАТЕЛЬСКОЕ МЕНЮ ---
 @dp.message(F.text == "🆘 Поддержка")
 async def cmd_support(message: Message):
-    text = ("🆘 **Служба поддержки**\n\n"
-            "Возникли вопросы или проблемы с оплатой? Напиши нашему администратору напрямую.\n\n"
-            "⚠️ *Пожалуйста, не спамьте, администратор ответит в течение дня.*")
-    await message.answer(text, reply_markup=get_support_kb(), parse_mode="Markdown")
+    await message.answer("🆘 **Служба поддержки**\n\nЕсть вопросы? Пиши админу или загляни в канал.", 
+                         reply_markup=get_support_kb(), parse_mode="Markdown")
 
 @dp.message(F.text == "💰 Баланс")
 async def cmd_balance(message: Message):
-    conn = sqlite3.connect(DB_NAME); cur = conn.cursor()
-    cur.execute("SELECT stars, premium_until FROM users WHERE user_id = ?", (message.from_user.id,))
-    row = cur.fetchone(); conn.close()
-    stars = row[0] if row else 0
-    premium = row[1] if row and row[1] else "Нет"
-    await message.answer(f"💰 **Баланс:** `{stars}` 🌟\n⏳ **Безлимит до:** `{premium}`", reply_markup=get_balance_kb(), parse_mode="Markdown")
+    res = db_query("SELECT stars, premium_until FROM users WHERE user_id = ?", (message.from_user.id,), fetchone=True)
+    stars = res[0] if res else 0
+    prem = res[1] if res and res[1] else "Нет"
+    await message.answer(f"💰 **Баланс:** `{stars}` 🌟\n⏳ **Безлимит до:** `{prem}`", reply_markup=get_balance_kb(), parse_mode="Markdown")
 
 @dp.message(F.text == "👤 Профиль")
 async def cmd_profile(message: Message):
-    conn = sqlite3.connect(DB_NAME); cur = conn.cursor()
-    cur.execute("SELECT downloads, stars, premium_until FROM users WHERE user_id = ?", (message.from_user.id,))
-    r = cur.fetchone(); conn.close()
-    used = r[0] if r else 0
-    stars = r[1] if r else 0
-    is_prem = "✅ Активен" if r and r[2] and datetime.strptime(r[2], '%Y-%m-%d %H:%M') > datetime.now() else "❌ Неактивен"
-    
-    await message.answer(f"👤 **Профиль**\nID: `{message.from_user.id}`\n🌟 Звёзд: `{stars}`\n🚀 Безлимит: {is_prem}\nЛимит: {used}/{FREE_LIMIT}", parse_mode="Markdown")
+    res = db_query("SELECT downloads, stars, premium_until FROM users WHERE user_id = ?", (message.from_user.id,), fetchone=True)
+    used, stars = (res[0], res[1]) if res else (0, 0)
+    is_prem = "✅ Да" if res and res[2] and datetime.strptime(res[2], '%Y-%m-%d %H:%M') > datetime.now() else "❌ Нет"
+    await message.answer(f"👤 **Профиль**\n\n🆔 ID: `{message.from_user.id}`\n🌟 Звёзд: `{stars}`\n🚀 Безлимит: {is_prem}\n🎬 Лимит сегодня: {used}/{FREE_LIMIT}", parse_mode="Markdown")
 
-# --- ПЛАТЕЖИ И ПРЕМИУМ ---
+# --- ПЛАТЕЖИ ---
 @dp.callback_query(F.data == "add_50_stars")
-async def buy_stars_process(callback: CallbackQuery):
-    await bot.send_invoice(callback.message.chat.id, title="50 Звезд", description="Пополнение баланса бота",
-                           payload="stars_50", provider_token="", currency="XTR", prices=[LabeledPrice(label="XTR", amount=50)])
+async def buy_stars(call: CallbackQuery):
+    await bot.send_invoice(call.message.chat.id, title="50 Звезд", description="Пополнение баланса", payload="50", provider_token="", currency="XTR", prices=[LabeledPrice(label="XTR", amount=50)])
 
 @dp.pre_checkout_query()
-async def pre_checkout_handler(pre_checkout_q: PreCheckoutQuery):
-    await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
+async def pre_checkout(q: PreCheckoutQuery): await bot.answer_pre_checkout_query(q.id, ok=True)
 
 @dp.message(F.successful_payment)
-async def success_payment(message: Message):
-    amount = message.successful_payment.total_amount
-    db_query("UPDATE users SET stars = stars + ? WHERE user_id = ?", (amount, message.from_user.id), commit=True)
-    await message.answer(f"✅ Зачислено {amount} звезд!")
-    await bot.send_message(ADMIN_ID, f"💰 **НОВОЕ ПОПОЛНЕНИЕ!**\nЮзер: `{message.from_user.id}`\nСумма: `{amount}` 🌟")
+async def success_pay(m: Message):
+    db_query("UPDATE users SET stars = stars + ? WHERE user_id = ?", (m.successful_payment.total_amount, m.from_user.id), commit=True)
+    await bot.send_message(ADMIN_ID, f"💰 Пополнение: {m.from_user.id} на {m.successful_payment.total_amount} 🌟")
 
 @dp.callback_query(F.data == "buy_premium")
-async def process_premium(callback: CallbackQuery):
-    conn = sqlite3.connect(DB_NAME); cur = conn.cursor()
-    cur.execute("SELECT stars FROM users WHERE user_id = ?", (callback.from_user.id,))
-    stars = cur.fetchone()[0] if cur.fetchone() else 0; conn.close()
-    
-    if stars < PREMIUM_COST:
-        await callback.answer("❌ Недостаточно звезд!", show_alert=True); return
+async def buy_prem(call: CallbackQuery):
+    res = db_query("SELECT stars FROM users WHERE user_id = ?", (call.from_user.id,), fetchone=True)
+    if res and res[0] >= PREMIUM_COST:
+        until = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M')
+        db_query("UPDATE users SET stars = stars - ?, premium_until = ? WHERE user_id = ?", (PREMIUM_COST, until, call.from_user.id), commit=True)
+        await call.message.edit_text(f"✅ Безлимит активирован до {until}"); await bot.send_message(ADMIN_ID, f"🚀 Куплен Премиум: {call.from_user.id}")
+    else: await call.answer("Недостаточно звезд!", show_alert=True)
 
-    until = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M')
-    db_query("UPDATE users SET stars = stars - ?, premium_until = ? WHERE user_id = ?", (PREMIUM_COST, until, callback.from_user.id), commit=True)
-    await callback.message.edit_text(f"✅ Безлимит активен до `{until}`!"); await callback.answer()
-    await bot.send_message(ADMIN_ID, f"🚀 **АКТИВАЦИЯ ПРЕМИУМА!**\nЮзер: `{callback.from_user.id}`\nСписано: `{PREMIUM_COST}` 🌟")
+# --- АДМИН-ПАНЕЛЬ ---
+@dp.message(F.text == "🛠 Админка")
+async def admin_menu_btn(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    await m.answer("🛠 Ты вошел в панель администратора.\n\nИспользуй команду **/ahelp**, чтобы увидеть список всех доступных инструментов.")
+
+@dp.message(Command("ahelp"))
+async def admin_help_cmd(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    help_text = (
+        "🆘 **СПРАВКА АДМИНИСТРАТОРА**\n\n"
+        "📊 **Статистика:**\n"
+        "`/stats` — Общее кол-во пользователей в базе.\n\n"
+        "📢 **Рассылка:**\n"
+        "`/broadcast [текст]` — Отправить сообщение всем пользователям.\n\n"
+        "👤 **Управление юзерами:**\n"
+        "`/check [ID]` — Проверить баланс, лимиты и статус бана юзера.\n"
+        "`/give [ID] [число]` — Выдать звезды пользователю.\n"
+        "`/ban [ID]` — Заблокировать доступ.\n"
+        "`/unban [ID]` — Разблокировать доступ.\n\n"
+        "💡 *Пример:* `/give 6779188403 50` — выдаст тебе 50 звезд."
+    )
+    await m.answer(help_text, parse_mode="Markdown")
+
+@dp.message(Command("stats"))
+async def ad_stats(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    res = db_query("SELECT COUNT(*) FROM users", fetchone=True)
+    await m.answer(f"📊 Всего юзеров в базе: `{res[0]}`", parse_mode="Markdown")
+
+@dp.message(Command("check"))
+async def ad_check(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    try:
+        uid = m.text.split()[1]
+        res = db_query("SELECT stars, downloads, is_banned, premium_until FROM users WHERE user_id = ?", (uid,), fetchone=True)
+        if res:
+            status = "БАН" if res[2] else "ОК"
+            prem = res[3] if res[3] else "Нет"
+            await m.answer(f"🔎 Юзер `{uid}`:\n🌟 Звезд: {res[0]}\n🎬 Скачано сегодня: {res[1]}\n🚀 Премиум до: {prem}\nСтатус: {status}", parse_mode="Markdown")
+        else: await m.answer("Юзер не найден.")
+    except: await m.answer("Используй: /check [ID]")
+
+@dp.message(Command("broadcast"))
+async def ad_broad(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    text = m.text.replace("/broadcast", "").strip()
+    if not text: return await m.answer("Напиши текст после команды!")
+    users = db_query("SELECT user_id FROM users", fetchall=True)
+    for u in users:
+        try: await bot.send_message(u[0], f"📢 **Объявление:**\n\n{text}", parse_mode="Markdown")
+        except: pass
+    await m.answer("✅ Рассылка завершена")
+
+@dp.message(Command("give"))
+async def ad_give(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    try:
+        _, uid, amt = m.text.split()
+        db_query("UPDATE users SET stars = stars + ? WHERE user_id = ?", (amt, uid), commit=True)
+        await m.answer(f"✅ Выдано {amt} звезд юзеру `{uid}`", parse_mode="Markdown")
+    except: await m.answer("Используй: /give [ID] [число]")
+
+@dp.message(Command("ban"))
+async def ad_ban(m: Message):
+    if m.from_user.id != ADMIN_ID: return
+    try:
+        uid = m.text.split()[1]
+        db_query("UPDATE users SET is_banned = 1 WHERE user_id = ?", (uid,), commit=True)
+        await m.answer(f"🚫 Юзер `{uid}` забанен.", parse_mode="Markdown")
+    except: await m.answer("Используй: /ban [ID]")
 
 # --- ОБРАБОТКА ВИДЕО ---
 @dp.message(F.text.contains("http"))
 async def handle_video(message: Message):
-    conn = sqlite3.connect(DB_NAME); cur = conn.cursor()
-    cur.execute("SELECT downloads, last_reset, is_banned, premium_until FROM users WHERE user_id = ?", (message.from_user.id,))
-    row = cur.fetchone(); conn.close()
-    if row and row[2] == 1: await message.answer("❌ Бан."); return
-    
-    is_prem = row and row[3] and datetime.strptime(row[3], '%Y-%m-%d %H:%M') > datetime.now()
+    res = db_query("SELECT downloads, last_reset, is_banned, premium_until FROM users WHERE user_id = ?", (message.from_user.id,), fetchone=True)
+    if res and res[2]: await message.answer("❌ Вы забанены."); return
+    is_p = res and res[3] and datetime.strptime(res[3], '%Y-%m-%d %H:%M') > datetime.now()
     today = datetime.now().strftime('%Y-%m-%d')
-    dl = row[0] if row and row[1] == today else 0
-
-    if not is_prem and dl >= FREE_LIMIT:
-        await message.answer("❌ Лимит! Купи безлимит в Балансе."); return
-
-    status = await message.answer("⏳ Обработка...")
+    dl = res[0] if res and res[1] == today else 0
+    if not is_p and dl >= FREE_LIMIT: await message.answer("❌ Лимит! Ждем завтра или купи Безлимит в Балансе."); return
+    status = await message.answer("⏳ Магия началась... Обрабатываю видео.")
     try:
         p = await asyncio.to_thread(download_video, message.text)
         f = await asyncio.to_thread(unique_video, p)
-        await message.answer_video(video=FSInputFile(f), caption="✅ Готово!")
-        if not is_prem: db_query("UPDATE users SET downloads = ?, last_reset = ? WHERE user_id = ?", (dl+1, today, message.from_user.id), commit=True)
+        await message.answer_video(video=FSInputFile(f), caption="✅ Твое видео готово!")
+        if not is_p: db_query("UPDATE users SET downloads = ?, last_reset = ? WHERE user_id = ?", (dl+1, today, message.from_user.id), commit=True)
         os.remove(p); os.remove(f); await status.delete()
-    except Exception as e: await message.answer(f"❌ Ошибка: {e}")
+    except Exception as e: await message.answer(f"❌ Ошибка обработки: {e}")
 
-# --- АДМИНКА И ПРОЧЕЕ ---
-@dp.message(F.text == "🛠 Админка")
-async def adm(message: Message):
-    if message.from_user.id == ADMIN_ID: 
-        await message.answer("🛠 Панель админа. Доступны команды: /broadcast, /give, /ban")
-
-@dp.message(F.text == "📜 Правила")
-async def rules(message: Message): 
-    await message.answer("3 видео в день бесплатно. Безлимит за 10 звезд.")
+@dp.message()
+async def rules_text(m: Message):
+    if m.text == "📜 Правила": 
+        await m.answer(f"⚖️ **Правила:**\n\n• Бесплатно: {FREE_LIMIT} видео/день.\n• Безлимит на 24ч: {PREMIUM_COST} звезд.\n• Запрещено использовать бота для спама.", parse_mode="Markdown")
 
 async def main(): await dp.start_polling(bot)
 if __name__ == "__main__": asyncio.run(main())
+
+
 
 
 
