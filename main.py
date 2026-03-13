@@ -71,7 +71,7 @@ async def check_sub(user_id):
 # --- КЛАВИАТУРЫ (ИСПРАВЛЕНО НА 100%) ---
 def get_main_kb(uid):
     btns =,,
-    ]
+    ])
     if uid == ADMIN_ID: btns.append()
     return ReplyKeyboardMarkup(keyboard=btns, resize_keyboard=True)
 
@@ -224,6 +224,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
