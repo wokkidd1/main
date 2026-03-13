@@ -72,27 +72,30 @@ async def check_sub(user_id):
         return member.status in ["member", "administrator", "creator"]
     except: return True
 
-# --- КЛАВИАТУРЫ (ИСПРАВЛЕНО НА 100%) ---
+# --- КЛАВИАТУРЫ (ИСПРАВЛЕНО) ---
 def get_main_kb(uid):
     btns = [
-        [KeyboardButton(text="Профиль"), KeyboardButton(text="Магазин")]
+        [KeyboardButton(text="💎 Тарифы"), KeyboardButton(text="💰 Баланс")],
+        [KeyboardButton(text="📢 Наш канал"), KeyboardButton(text="🆘 Поддержка")],
+        [KeyboardButton(text="📖 Инструкция")]
     ]
     if uid == ADMIN_ID:
-        btns.append([KeyboardButton(text="Админ-панель")])
+        btns.append([KeyboardButton(text="🛠 Админка")])
     return ReplyKeyboardMarkup(keyboard=btns, resize_keyboard=True)
 
 def get_balance_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пополнить", callback_data="topup")]
+        [InlineKeyboardButton(text="Пополнить Stars", callback_data="refill_stars")]
     ])
 
 def get_shop_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Товар 1", callback_data="buy_1")],
-        [InlineKeyboardButton(text="Товар 2", callback_data="buy_2")]
+        [InlineKeyboardButton(text="50 Лимитов - 100 🌟", callback_data="buy:pack:50:100")],
+        [InlineKeyboardButton(text="Безлимит 30 дней - 500 🌟", callback_data="buy:sub:30:500")],
+        [InlineKeyboardButton(text="Назад", callback_data="back")]
     ])
 
-# --- ОБРАБОТЧИКИ ---
+# --- ОБРАБОТЧИКИ (ИСПРАВЛЕНО) ---
 @dp.message(CommandStart())
 async def cmd_start(m: Message):
     uid, today = m.from_user.id, datetime.now().strftime('%Y-%m-%d')
@@ -102,17 +105,21 @@ async def cmd_start(m: Message):
 
 @dp.message(F.text == "📢 Наш канал")
 async def cmd_channel(m: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Перейти в канал", url=CHANNEL_URL)]
+    ])
     await m.answer("📢 Наш канал:", reply_markup=kb)
 
 @dp.message(F.text == "🆘 Поддержка")
 async def cmd_support(m: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Связаться", url=SUPPORT_URL)]
+    ])
     await m.answer("🆘 По всем вопросам:", reply_markup=kb)
 
 @dp.message(F.text == "📖 Инструкция")
 async def cmd_help(m: Message):
-    await m.answer("📖 **Инструкция:**\nПришли ссылку -> Выбери режим -> Получи видео.\nПополнение: **💰 Баланс**.")
+    await m.answer("📖 **Инструкция:**\nПришли ссылку -> Выбери режим -> Получи видео.\nПополнение: **💰 Баланс**.", parse_mode="Markdown")
 
 @dp.message(F.text == "💰 Баланс")
 async def cmd_balance(m: Message):
@@ -130,7 +137,7 @@ async def cmd_shop(m: Message):
 async def admin_panel(m: Message):
     if m.from_user.id != ADMIN_ID: return
     u_count = db_query("SELECT COUNT(*) FROM users", fetchone=True)
-    await m.answer(f"⚙️ **Админка**\nЮзеров: `{u_count[0]}`\nКоманды: `/broadcast`, `/give_stars ID кол-во`")
+    await m.answer(f"⚙️ **Админка**\nЮзеров: `{u_count[0]}`\nКоманды: `/broadcast`, `/give_stars ID кол-во`", parse_mode="Markdown")
 
 # --- ПЛАТЕЖИ ---
 @dp.callback_query(F.data == "refill_stars")
@@ -236,6 +243,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
