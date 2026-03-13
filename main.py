@@ -74,18 +74,22 @@ async def check_sub(user_id):
 
 # --- КЛАВИАТУРЫ (ИСПРАВЛЕНО НА 100%) ---
 def get_main_kb(uid):
-    btns =,,
+    btns = [
+        [KeyboardButton(text="Профиль"), KeyboardButton(text="Магазин")]
     ]
     if uid == ADMIN_ID:
-        btns.append()
+        btns.append([KeyboardButton(text="Админ-панель")])
     return ReplyKeyboardMarkup(keyboard=btns, resize_keyboard=True)
 
 def get_balance_kb():
-    return InlineKeyboardMarkup(inline_keyboard=,
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пополнить", callback_data="topup")]
     ])
 
 def get_shop_kb():
-    return InlineKeyboardMarkup(inline_keyboard=,,,,
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Товар 1", callback_data="buy_1")],
+        [InlineKeyboardButton(text="Товар 2", callback_data="buy_2")]
     ])
 
 # --- ОБРАБОТЧИКИ ---
@@ -232,6 +236,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
