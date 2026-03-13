@@ -196,17 +196,18 @@ async def process_buy(call: CallbackQuery):
     await call.message.answer("✅ Успешно куплено!")
     await call.answer()
 
-
-# --- ВИДЕО ---
+# --- ВИДЕО (ИСПРАВЛЕНО) ---
 @dp.message(F.text.contains("http"))
 async def handle_link(m: Message):
     uid = m.from_user.id
     if not await check_sub(uid):
-        kb = InlineKeyboardMarkup(inline_keyboard=])
-        return await m.answer(f"⚠️ Сначала подпишись на канал: {CHANNEL_URL}", reply_markup=kb)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Подписаться", url=CHANNEL_URL)]
+        ])
+        return await m.answer(f"⚠️ Сначала подпишись на канал", reply_markup=kb)
     
     if uid == ADMIN_ID and "\n" in m.text:
-        links =
+        links = m.text.split('\n')
         st = await m.answer(f"🚜 Ферма: {len(links)} видео..."); processed = []
         for l in links:
             try:
@@ -218,18 +219,23 @@ async def handle_link(m: Message):
                         processed.append((p, f))
             except: continue
         if processed:
-            z = f"farm_{datetime.now().strftime('%H%M')}.zip"
+            z = f"results/farm_{datetime.now().strftime('%H%M')}.zip"
             with zipfile.ZipFile(z, 'w') as zip_f:
                 for _, f in processed:
                     if os.path.exists(f): zip_f.write(f, os.path.basename(f))
-            await m.answer_document(FSInputFile(z)); os.remove(z)
+            await m.answer_document(FSInputFile(z))
+            os.remove(z)
             for p, f in processed:
                 if os.path.exists(p): os.remove(p)
                 if os.path.exists(f): os.remove(f)
         return await st.delete()
 
     user_links[uid] = m.text
-    kb = InlineKeyboardMarkup(inline_keyboard=])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Light", callback_data="p:Light"),
+         InlineKeyboardButton(text="Medium", callback_data="p:Medium")],
+        [InlineKeyboardButton(text="Hard", callback_data="p:Hard")]
+    ])
     await m.answer("🎯 Режим уникализации:", reply_markup=kb)
 
 @dp.callback_query(F.data.startswith("p:"))
@@ -239,13 +245,23 @@ async def preset_call(call: CallbackQuery):
     
     res = db_query("SELECT downloads, last_reset, premium_until, extra_limits, is_banned FROM users WHERE user_id = ?", (uid,), fetchone=True)
     if res and res[4] == 1: return await call.answer("🚫 Бан!", show_alert=True)
-    is_prem = res and res[2] and datetime.strptime(res[2], '%Y-%m-%d %H:%M') > datetime.now()
-    dl, today = res[0] if res and res[1] == datetime.now().strftime('%Y-%m-%d') else 0, datetime.now().strftime('%Y-%m-%d')
+    
+    is_prem = False
+    if res and res[2]:
+        try:
+            is_prem = datetime.strptime(res[2], '%Y-%m-%d %H:%M') > datetime.now()
+        except: pass
+
+    dl = res[0] if res and res[1] == datetime.now().strftime('%Y-%m-%d') else 0
+    today = datetime.now().strftime('%Y-%m-%d')
     
     if is_prem: pass
-    elif dl < FREE_LIMIT: db_query("UPDATE users SET downloads = ?, last_reset = ? WHERE user_id = ?", (dl+1, today, uid), commit=True)
-    elif res[3] and res[3] > 0: db_query("UPDATE users SET extra_limits = extra_limits - 1 WHERE user_id = ?", (uid,), commit=True)
-    else: return await call.message.edit_text("❌ Лимит исчерпан!")
+    elif dl < FREE_LIMIT: 
+        db_query("UPDATE users SET downloads = ?, last_reset = ? WHERE user_id = ?", (dl+1, today, uid), commit=True)
+    elif res and res[3] and res[3] > 0: 
+        db_query("UPDATE users SET extra_limits = extra_limits - 1 WHERE user_id = ?", (uid,), commit=True)
+    else: 
+        return await call.message.edit_text("❌ Лимит исчерпан!")
     
     msg = await call.message.edit_text(f"⏳ Обработка ({mode})...")
     try:
@@ -257,16 +273,20 @@ async def preset_call(call: CallbackQuery):
                 await call.message.answer_video(video=FSInputFile(f), caption=f"✅ Готово! ({mode})")
                 if os.path.exists(p): os.remove(p)
                 if os.path.exists(f): os.remove(f)
-    except: await call.message.answer("❌ Ошибка.")
+    except: 
+        await call.message.answer("❌ Ошибка при обработке.")
     finally:
-        if uid in user_links: del user_links[uid]
-        await msg.delete()
+        user_links.pop(uid, None)
+        try: await msg.delete()
+        except: pass
 
 async def main():
     print("Бот запущен. Ошибок 0."); await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
 
 
