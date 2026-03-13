@@ -139,20 +139,30 @@ async def admin_panel(m: Message):
     u_count = db_query("SELECT COUNT(*) FROM users", fetchone=True)
     await m.answer(f"⚙️ **Админка**\nЮзеров: `{u_count[0]}`\nКоманды: `/broadcast`, `/give_stars ID кол-во`", parse_mode="Markdown")
 
-# --- ПЛАТЕЖИ ---
+# --- ПЛАТЕЖИ (ИСПРАВЛЕНО) ---
 @dp.callback_query(F.data == "refill_stars")
 async def select_refill(call: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=,,
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="50 🌟", callback_data="pay:50"), 
+         InlineKeyboardButton(text="100 🌟", callback_data="pay:100")],
+        [InlineKeyboardButton(text="500 🌟", callback_data="pay:500")]
     ])
     await call.message.edit_text("💎 Сумма пополнения:", reply_markup=kb)
 
 @dp.callback_query(F.data.startswith("pay:"))
 async def process_pay(call: CallbackQuery):
     amt = int(call.data.split(":")[1])
-    await call.message.answer_invoice(title=f"{amt} Stars", description="Пополнение", prices=[LabeledPrice(label="XTR", amount=amt)], payload=f"s_{amt}", currency="XTR")
+    await call.message.answer_invoice(
+        title=f"{amt} Stars", 
+        description="Пополнение баланса", 
+        prices=[LabeledPrice(label="XTR", amount=amt)], 
+        payload=f"s_{amt}", 
+        currency="XTR"
+    )
 
 @dp.pre_checkout_query()
-async def pre_checkout(q: PreCheckoutQuery): await q.answer(ok=True)
+async def pre_checkout(q: PreCheckoutQuery): 
+    await q.answer(ok=True)
 
 @dp.message(F.successful_payment)
 async def success_pay(m: Message):
@@ -162,16 +172,30 @@ async def success_pay(m: Message):
 
 @dp.callback_query(F.data.startswith("buy:"))
 async def process_buy(call: CallbackQuery):
-    _, itype, val, price = call.data.split(":")
+    data_parts = call.data.split(":")
+    if len(data_parts) < 4:
+        return await call.answer("ошибка данных", show_alert=True)
+        
+    _, itype, val, price = data_parts
     uid, price, val = call.from_user.id, int(price), int(val)
-    stars = db_query("SELECT stars FROM users WHERE user_id = ?", (uid,), fetchone=True)
-    if not stars or stars[0] < price: return await call.answer("❌ Недостаточно Stars!", show_alert=True)
+    
+    res = db_query("SELECT stars FROM users WHERE user_id = ?", (uid,), fetchone=True)
+    stars = res[0] if res else 0
+    
+    if stars < price: 
+        return await call.answer("❌ Недостаточно Stars!", show_alert=True)
+        
     db_query("UPDATE users SET stars = stars - ? WHERE user_id = ?", (price, uid), commit=True)
-    if itype == "pack": db_query("UPDATE users SET extra_limits = extra_limits + ? WHERE user_id = ?", (val, uid), commit=True)
+    
+    if itype == "pack": 
+        db_query("UPDATE users SET extra_limits = extra_limits + ? WHERE user_id = ?", (val, uid), commit=True)
     else: 
         until = (datetime.now() + timedelta(days=val)).strftime('%Y-%m-%d %H:%M')
         db_query("UPDATE users SET premium_until = ? WHERE user_id = ?", (until, uid), commit=True)
-    await call.message.answer("✅ Успешно куплено!"); await call.answer()
+        
+    await call.message.answer("✅ Успешно куплено!")
+    await call.answer()
+
 
 # --- ВИДЕО ---
 @dp.message(F.text.contains("http"))
@@ -243,6 +267,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
